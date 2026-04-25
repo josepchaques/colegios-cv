@@ -1,35 +1,39 @@
 "use client";
-import { useState } from "react";
-import { Search, MapPin, SlidersHorizontal, ChevronDown, ChevronUp, Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Search, MapPin, SlidersHorizontal, ChevronDown, ChevronUp, Loader2, CheckCircle2 } from "lucide-react";
 import type { RecommendRequest } from "@/lib/types";
 import clsx from "clsx";
 
-// Bounding box for Comunitat Valenciana — prevents Nominatim from returning
-// cities with the same name in other provinces (e.g. "Paterna" in Huelva).
-const CV_BBOX = "viewbox=-1.5,38.5,1.0,40.5&bounded=1";
-const CV_LAT  = { min: 38.5, max: 40.5 };
-const CV_LON  = { min: -1.5, max: 1.0  };
+const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? "";
+// Bounding box Comunitat Valenciana [minLon, minLat, maxLon, maxLat]
+const CV_BBOX = "-1.5,38.5,1.0,40.5";
 
-async function geocode(address: string): Promise<{ lat: number; lon: number; label: string } | null> {
+interface Suggestion {
+  label: string;
+  lat: number;
+  lon: number;
+}
+
+async function fetchSuggestions(query: string): Promise<Suggestion[]> {
+  if (!query.trim() || query.length < 3) return [];
   try {
-    const url =
-      `https://nominatim.openstreetmap.org/search?` +
-      `q=${encodeURIComponent(address)}&format=json&limit=3&countrycodes=es&${CV_BBOX}`;
-    const res  = await fetch(url, { headers: { "Accept-Language": "es" } });
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json` +
+      `?access_token=${MAPBOX_TOKEN}` +
+      `&country=es` +
+      `&bbox=${CV_BBOX}` +
+      `&language=es` +
+      `&limit=5` +
+      `&types=place,locality,neighborhood,address,poi`;
+    const res  = await fetch(url);
     const data = await res.json();
-
-    for (const item of data) {
-      const lat = parseFloat(item.lat);
-      const lon = parseFloat(item.lon);
-      // Accept only coordinates inside the CV
-      if (lat >= CV_LAT.min && lat <= CV_LAT.max && lon >= CV_LON.min && lon <= CV_LON.max) {
-        // Shorten the display name to the first two comma-separated parts
-        const label = item.display_name.split(",").slice(0, 2).join(",").trim();
-        return { lat, lon, label };
-      }
-    }
-  } catch {}
-  return null;
+    return (data.features ?? []).map((f: any) => ({
+      label: f.place_name,
+      lat:   f.center[1],
+      lon:   f.center[0],
+    }));
+  } catch {
+    return [];
+  }
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -39,24 +43,24 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 const LEVEL_LABELS: { key: string; label: string }[] = [
-  { key: "infantil",    label: "Infantil" },
-  { key: "primaria",    label: "Primaria" },
-  { key: "secundaria",  label: "Secundaria" },
-  { key: "bachillerato",label: "Bachillerato" },
-  { key: "FP",          label: "FP" },
+  { key: "infantil",     label: "Infantil" },
+  { key: "primaria",     label: "Primaria" },
+  { key: "secundaria",   label: "Secundaria" },
+  { key: "bachillerato", label: "Bachillerato" },
+  { key: "FP",           label: "FP" },
 ];
 
 const PREFS: { key: string; label: string; emoji: string }[] = [
   { key: "stem",        label: "STEM / Tecnología", emoji: "🔬" },
-  { key: "sports",      label: "Deportes",           emoji: "⚽" },
-  { key: "arts",        label: "Artes",              emoji: "🎨" },
-  { key: "english",     label: "Inglés",             emoji: "🇬🇧" },
-  { key: "valencian",   label: "Valenciano",         emoji: "🟡" },
-  { key: "bilingual",   label: "Bilingüe",           emoji: "🌍" },
-  { key: "montessori",  label: "Montessori",         emoji: "🌱" },
-  { key: "traditional", label: "Metodología trad.",  emoji: "📚" },
-  { key: "religion",    label: "Religioso",          emoji: "✝️" },
-  { key: "inclusion",   label: "Inclusión",          emoji: "🤝" },
+  { key: "sports",      label: "Deportes",          emoji: "⚽" },
+  { key: "arts",        label: "Artes",             emoji: "🎨" },
+  { key: "english",     label: "Inglés",            emoji: "🇬🇧" },
+  { key: "valencian",   label: "Valenciano",        emoji: "🟡" },
+  { key: "bilingual",   label: "Bilingüe",          emoji: "🌍" },
+  { key: "montessori",  label: "Montessori",        emoji: "🌱" },
+  { key: "traditional", label: "Metodología trad.", emoji: "📚" },
+  { key: "religion",    label: "Religioso",         emoji: "✝️" },
+  { key: "inclusion",   label: "Inclusión",         emoji: "🤝" },
 ];
 
 const WEIGHTS: { key: string; label: string }[] = [
@@ -74,11 +78,13 @@ interface Props {
 }
 
 export function FilterPanel({ initial, onSearch, loading }: Props) {
-  const [address,     setAddress]     = useState("Valencia, España");
-  const [geocoding,   setGeocoding]   = useState(false);
-  const [geoError,    setGeoError]    = useState("");
-  const [geoLabel,    setGeoLabel]    = useState("");
-  const [coords,      setCoords]      = useState({ lat: initial.lat, lon: initial.lon });
+  const [address,      setAddress]      = useState("Valencia, España");
+  const [suggestions,  setSuggestions]  = useState<Suggestion[]>([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [selected,     setSelected]     = useState<Suggestion | null>(null);
+  const [coords,       setCoords]       = useState({ lat: initial.lat, lon: initial.lon });
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wrapperRef  = useRef<HTMLDivElement>(null);
 
   const [salary,      setSalary]      = useState(String(initial.monthly_salary));
   const [distance,    setDistance]    = useState(String(initial.max_distance_km));
@@ -88,51 +94,54 @@ export function FilterPanel({ initial, onSearch, loading }: Props) {
   const [weights,     setWeights]     = useState({ user_fit:35, distance:25, cost:20, quality:15, reviews:5 });
   const [showWeights, setShowWeights] = useState(false);
 
-  const toggleType = (t: string) =>
-    setTypes(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
+  // Debounced autocomplete
+  useEffect(() => {
+    if (selected) return; // don't re-fetch after a selection
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      const results = await fetchSuggestions(address);
+      setSuggestions(results);
+      setShowDropdown(results.length > 0);
+    }, 300);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [address]);
 
-  const toggleLevel = (l: string) =>
-    setLevels(prev => prev.includes(l) ? prev.filter(x => x !== l) : [...prev, l]);
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setShowDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
 
   const handleAddressChange = (val: string) => {
     setAddress(val);
-    setGeoError("");
-    setGeoLabel("");
+    setSelected(null); // clear selection when user types again
   };
 
-  const handleSubmit = async () => {
-    setGeoError("");
-    setGeoLabel("");
+  const handleSelect = (s: Suggestion) => {
+    setAddress(s.label.split(",").slice(0, 2).join(",").trim());
+    setCoords({ lat: s.lat, lon: s.lon });
+    setSelected(s);
+    setShowDropdown(false);
+  };
 
-    let lat = coords.lat;
-    let lon = coords.lon;
+  const toggleType  = (t: string) =>
+    setTypes(prev  => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
+  const toggleLevel = (l: string) =>
+    setLevels(prev => prev.includes(l) ? prev.filter(x => x !== l) : [...prev, l]);
 
-    if (address.trim()) {
-      setGeocoding(true);
-      const result = await geocode(address);
-      setGeocoding(false);
-
-      if (result) {
-        lat = result.lat;
-        lon = result.lon;
-        setCoords({ lat, lon });
-        setGeoLabel(result.label);
-      } else {
-        setGeoError(
-          "No se encontró en la Comunitat Valenciana. " +
-          "Prueba añadiendo la ciudad: \"La Cañada, Paterna, Valencia\"."
-        );
-        // Still search with last known coords
-      }
-    }
-
+  const handleSubmit = () => {
     onSearch({
-      lat,
-      lon,
-      monthly_salary:  parseFloat(salary) || 2000,
-      school_types:    types.length  ? types  : undefined,
-      school_levels:   levels.length ? levels : undefined,
-      preferences:     prefs,
+      lat:            coords.lat,
+      lon:            coords.lon,
+      monthly_salary: parseFloat(salary) || 2000,
+      school_types:   types.length  ? types  : undefined,
+      school_levels:  levels.length ? levels : undefined,
+      preferences:    prefs,
       weights: {
         user_fit: weights.user_fit / 100,
         distance: weights.distance / 100,
@@ -153,26 +162,44 @@ export function FilterPanel({ initial, onSearch, loading }: Props) {
         <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
           Tu ubicación
         </h3>
-        <div className="relative">
-          <MapPin className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+        <div className="relative" ref={wrapperRef}>
+          <MapPin className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-gray-400 pointer-events-none z-10" />
+          {selected && (
+            <CheckCircle2 className="absolute right-2.5 top-2.5 w-3.5 h-3.5 text-emerald-500 pointer-events-none z-10" />
+          )}
           <input
-            className="w-full pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
+            className="w-full pl-8 pr-8 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
             value={address}
             onChange={e => handleAddressChange(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && handleSubmit()}
+            onFocus={() => suggestions.length > 0 && !selected && setShowDropdown(true)}
+            onKeyDown={e => {
+              if (e.key === "Escape") setShowDropdown(false);
+              if (e.key === "Enter") { setShowDropdown(false); handleSubmit(); }
+            }}
             placeholder="Ej: La Cañada, Paterna"
+            autoComplete="off"
           />
+
+          {/* Dropdown */}
+          {showDropdown && (
+            <ul className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
+              {suggestions.map((s, i) => (
+                <li key={i}>
+                  <button
+                    className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-brand-50 hover:text-brand-700 flex items-start gap-2 transition-colors"
+                    onMouseDown={e => { e.preventDefault(); handleSelect(s); }}
+                  >
+                    <MapPin className="w-3 h-3 flex-none mt-0.5 text-gray-400" />
+                    <span className="leading-snug">{s.label}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
-        {geoLabel && !geoError && (
-          <p className="flex items-center gap-1 text-[10px] text-emerald-600 mt-1">
-            <CheckCircle2 className="w-3 h-3 flex-none" />
-            {geoLabel}
-          </p>
-        )}
-        {geoError && (
-          <p className="flex items-start gap-1 text-[10px] text-amber-600 mt-1">
-            <AlertCircle className="w-3 h-3 flex-none mt-0.5" />
-            {geoError}
+        {selected && (
+          <p className="text-[10px] text-emerald-600 mt-1 truncate">
+            {selected.lat.toFixed(4)}, {selected.lon.toFixed(4)}
           </p>
         )}
       </div>
@@ -335,22 +362,19 @@ export function FilterPanel({ initial, onSearch, loading }: Props) {
       {/* Submit */}
       <button
         onClick={handleSubmit}
-        disabled={loading || geocoding}
+        disabled={loading}
         className={clsx(
           "w-full py-2.5 text-sm font-semibold rounded-lg transition-all",
           "flex items-center justify-center gap-2",
-          loading || geocoding
+          loading
             ? "bg-brand-300 text-white cursor-wait"
             : "bg-brand-500 text-white hover:bg-brand-600 shadow-sm hover:shadow"
         )}
       >
-        {geocoding ? (
-          <><Loader2 className="w-4 h-4 animate-spin" /> Localizando…</>
-        ) : loading ? (
-          <><Loader2 className="w-4 h-4 animate-spin" /> Buscando…</>
-        ) : (
-          <><Search className="w-4 h-4" /> Buscar colegios</>
-        )}
+        {loading
+          ? <><Loader2 className="w-4 h-4 animate-spin" /> Buscando…</>
+          : <><Search className="w-4 h-4" /> Buscar colegios</>
+        }
       </button>
     </div>
   );
