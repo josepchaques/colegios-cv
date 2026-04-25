@@ -1,0 +1,26 @@
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap');
+@import 'mapbox-gl/dist/mapbox-gl.css';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: 'Nunito', system-ui, sans-serif;
+  @apply bg-gray-50 text-gray-900;
+}
+
+.mapboxgl-map { border-radius: 0; }
+.mapboxgl-ctrl-logo { display: none !important; }
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { @apply bg-gray-200 rounded-full; }
+
+/* Score bar animation */
+@keyframes growWidth {
+  from { width: 0; }
+}
+.score-bar { animation: growWidth 0.5s ease-out forwards; }
