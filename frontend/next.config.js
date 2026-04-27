@@ -23,7 +23,7 @@ const nextConfig = {
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "font-src 'self' https://fonts.gstatic.com",
               "img-src 'self' data: blob: https://*.mapbox.com",
-              "connect-src 'self' https://*.mapbox.com https://nominatim.openstreetmap.org http://localhost:8000",
+              "connect-src 'self' https://*.mapbox.com https://nominatim.openstreetmap.org http://localhost:8000 https://*.onrender.com",
               "worker-src blob:",
               "frame-ancestors 'none'",
             ].join("; "),
