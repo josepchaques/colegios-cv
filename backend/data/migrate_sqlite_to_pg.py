@@ -39,8 +39,8 @@ def run():
 
     db = SessionLocal()
     try:
-        # Truncate existing data
-        db.query(School).delete()
+        # Truncate existing data and reset sequence
+        db.execute(__import__("sqlalchemy").text("TRUNCATE TABLE schools RESTART IDENTITY CASCADE"))
         db.commit()
 
         batch = []
