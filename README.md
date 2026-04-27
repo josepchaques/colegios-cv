@@ -9,9 +9,12 @@ Recomendador personalizado de colegios para la **Comunitat Valenciana**. Combina
 - **4.026 centros reales** — cruce de OpenStreetMap + CSV oficial Dades Obertes GVA
 - **Scoring personalizado** — 5 dimensiones ponderables: encaje educativo, distancia, coste, calidad académica y reseñas
 - **Mapa interactivo** — marcadores en Mapbox GL con hover y selección
-- **Filtros por tipo y etapa** — público/concertado/privado · infantil/primaria/ESO/bachillerato/FP
+- **Vista burbuja** — visualización Circle Pack con D3.js
+- **Filtros por tipo y etapa** — público/concertado/privado · infantil/primaria/ESO/bachillerato/FP (filtro AND)
 - **Explicabilidad** — razones positivas y puntos a considerar por cada colegio recomendado
-- **Geocodificación** — búsqueda por dirección con Nominatim (sin API key), acotada a la CV
+- **Geocodificación** — búsqueda por dirección con Mapbox Geocoding, acotada a la CV
+- **Diseño responsive** — funciona en móvil, tablet y escritorio
+- **Captura de leads** — popup PDF desde la card de cada colegio
 
 ---
 
@@ -36,9 +39,10 @@ Recomendador personalizado de colegios para la **Comunitat Valenciana**. Combina
 | Framework | Next.js (App Router) | 14.2 |
 | Lenguaje | TypeScript | 5.4 |
 | Estilos | Tailwind CSS | 3.4 |
-| Tipografía | Nunito (Google Fonts) | — |
 | Mapa | Mapbox GL JS | 3.4 |
+| Visualización | D3.js | 7.9 |
 | Estado servidor | TanStack Query | 5.4 |
+| Geocodificación UI | Mapbox Geocoding API | — |
 
 ---
 
@@ -53,19 +57,23 @@ colegios-cv/
 │   │   ├── models/           # Modelo SQLAlchemy (School)
 │   │   ├── schemas/          # Pydantic schemas
 │   │   └── services/         # scorer.py + recommender.py
+│   ├── app/
+│   │   ├── scheduler.py      # APScheduler — jobs automáticos de ETL
+│   │   └── ...
 │   ├── data/
-│   │   ├── etl_overpass.py   # ETL OpenStreetMap → SQLite
-│   │   └── etl_gva.py        # ETL CSV GVA → enriquecimiento
-│   ├── schools_cv.db         # Base de datos SQLite (4.026 centros)
+│   │   ├── etl_overpass.py       # ETL OpenStreetMap → PostgreSQL
+│   │   ├── etl_gva.py            # ETL CSV GVA → enriquecimiento
+│   │   ├── etl_levels.py         # ETL WFS ICV/GVA → etapas educativas oficiales
+│   │   └── migrate_sqlite_to_pg.py  # Migración one-shot SQLite → PostgreSQL
 │   └── requirements.txt
 └── frontend/
     ├── src/
     │   ├── app/              # Layout, página principal, estilos globales
     │   ├── components/       # FilterPanel, MapView, SchoolList, SchoolDetail, SchoolCard,
-    │   │                     # RecommendingLoader (spinner de carga), LeadModal (captura de leads)
+    │   │                     # CirclePackView, RecommendingLoader, LeadModal, Logo
     │   └── lib/              # API client, tipos TypeScript
-    ├── public/               # Logo, favicons
-    └── next.config.js
+    ├── public/               # Favicons, robots.txt
+    └── next.config.js        # CSP headers, env vars
 ```
 
 ---
@@ -86,11 +94,12 @@ docker compose up --build
 
 Abre [http://localhost:3000](http://localhost:3000). La API estará en [http://localhost:8000](http://localhost:8000).
 
-Los ETLs se ejecutan automáticamente al arrancar la app (OSM mensual, GVA trimestral). Para lanzarlos manualmente dentro del contenedor:
+Los ETLs se ejecutan automáticamente vía APScheduler (OSM mensual, GVA trimestral). Para lanzarlos manualmente dentro del contenedor:
 
 ```bash
 docker compose exec backend python data/etl_overpass.py
 docker compose exec backend python data/etl_gva.py
+docker compose exec backend python data/etl_levels.py
 ```
 
 ### Sin Docker (requiere PostgreSQL local)
@@ -226,14 +235,26 @@ Documentación completa del algoritmo en [ARCHITECTURE.md](./ARCHITECTURE.md).
 
 ## Despliegue (producción)
 
-Stack recomendado gratuito: **Vercel** (frontend) + **Render** (backend).
+Stack: **Vercel** (frontend) + **Render** (backend + PostgreSQL).
 
-Ver guía detallada en [ARCHITECTURE.md — Despliegue](./ARCHITECTURE.md).
+**Frontend (Vercel)**
+- Root Directory: `frontend`
+- Variables de entorno:
+  ```
+  NEXT_PUBLIC_MAPBOX_TOKEN=pk.xxx
+  NEXT_PUBLIC_API_URL=https://tu-backend.onrender.com
+  ```
 
-Variables clave para producción:
-- `DEBUG=false` — desactiva Swagger UI
-- `ALLOWED_ORIGINS=https://tuapp.vercel.app`
-- `NEXT_PUBLIC_API_URL=https://tu-backend.onrender.com`
+**Backend (Render)**
+- Variables de entorno:
+  ```
+  DATABASE_URL=postgresql://...@dpg-xxx-a/schools_cv   # Internal URL de Render
+  ALLOWED_ORIGINS=https://tu-app.vercel.app
+  DEBUG=false
+  ```
+- Migración inicial de datos: `python data/migrate_sqlite_to_pg.py`
+
+> En el plan gratuito de Render el servicio duerme tras 15 min de inactividad — la primera petición puede tardar hasta 60 s (cold start). El frontend tiene un timeout de 60 s para tolerarlo.
 
 ---
 

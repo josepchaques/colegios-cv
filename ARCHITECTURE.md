@@ -21,19 +21,22 @@
 
 | Componente | Tecnología | Versión | Rol |
 |---|---|---|---|
-| Framework | Next.js (App Router) | 14.2 | SSR / CSR híbrido |
+| Framework | Next.js (App Router) | 14.2 | SSR / CSR híbrido, responsive |
 | Lenguaje | TypeScript | 5.4 | Type safety en cliente |
-| Estilos | Tailwind CSS | 3.4 | Utility-first CSS |
+| Estilos | Tailwind CSS | 3.4 | Utility-first CSS, breakpoints lg/md/mobile |
 | Mapa | Mapbox GL JS | 3.4 | Mapa interactivo con marcadores |
+| Visualización | D3.js | 7.9 | Vista Circle Pack (burbujas por score) |
 | Estado servidor | TanStack Query | 5.4 | Caché y mutaciones API |
-| Geocodificación UI | Nominatim (OpenStreetMap) | — | Dirección → coordenadas (sin API key) |
+| Geocodificación UI | Mapbox Geocoding API | — | Dirección → coordenadas, acotada a CV |
 
 ### Infraestructura
 
 | Componente | Tecnología |
 |---|---|
 | Contenedores | Docker + Docker Compose |
-| Orquestación pipelines (roadmap) | Apache Airflow |
+| Frontend (producción) | Vercel |
+| Backend (producción) | Render |
+| Base de datos (producción) | Render PostgreSQL |
 
 ---
 
@@ -309,13 +312,34 @@ Sin selección en `school_types` o `school_levels` equivale a "todos".
 
 ---
 
+## Notas de implementación
+
+### Base de datos
+- El modelo usa `School.code VARCHAR(50)` — los códigos OSM de relaciones llegan a 21 caracteres (`osm_relation_XXXXXXXXXXX`), por lo que `VARCHAR(20)` es insuficiente.
+- La migración one-shot de SQLite a PostgreSQL está en `data/migrate_sqlite_to_pg.py`. Usa `TRUNCATE TABLE schools RESTART IDENTITY CASCADE` para garantizar idempotencia.
+
+### Frontend responsive
+- **Mobile** (`< lg`): layout de una columna con barra de tabs en el fondo (Filtros / Mapa / Resultados). Al pulsar "Buscar" se navega automáticamente al tab Mapa.
+- **Desktop** (`lg:`): tres columnas fijas: FilterPanel (w-72) | Mapa (flex-1) | SchoolList (w-80).
+- `SchoolDetail`: panel lateral en desktop, pantalla completa en mobile.
+- Altura de viewport: `h-[100dvh]` para manejar correctamente el chrome del navegador en iOS.
+
+### CSP (Content Security Policy)
+Configurada en `next.config.js`. La directiva `connect-src` debe incluir `https://*.onrender.com` para permitir llamadas al backend en producción.
+
+### Cold start en Render (plan gratuito)
+El servicio duerme tras 15 min de inactividad. El frontend tiene `AbortSignal.timeout(60_000)` para tolerar el cold start (~30–60 s).
+
+---
+
 ## Evolución prevista (roadmap)
 
 ### Datos
 - [ ] Integración Google Places API para ratings reales
+- [ ] Excel consulta lingüística GVA → `feature_valencian` fiable por centro
+- [ ] Auxiliares de conversación CEICE (PDF) → `feature_english` fiable
 - [ ] Índice de renta por zona desde microdatos INE
 - [ ] Datos de resultados PAU/EvAU por centro (Ministerio de Educación)
-- [ ] Transporte público (EMT Valencia, Metrovalencia)
 
 ### Modelo
 - [ ] **Learning to Rank** (LambdaMART / XGBoost Ranker) entrenado con feedback implícito de clicks
