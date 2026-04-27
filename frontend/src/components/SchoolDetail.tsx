@@ -30,7 +30,7 @@ export function SchoolDetail({ school, onClose }: Props) {
       : `${school.monthly_fee_min}–${school.monthly_fee_max}€/mes (media ~${Math.round(school.monthly_fee_avg)}€)`;
 
   return (
-    <div className="fixed inset-y-0 right-0 w-96 bg-white shadow-2xl z-50 flex flex-col overflow-hidden border-l border-gray-100">
+    <div className="fixed inset-0 lg:inset-y-0 lg:left-auto lg:right-0 lg:w-96 bg-white shadow-2xl z-50 flex flex-col overflow-hidden border-l border-gray-100">
       {/* Header */}
       <div className="flex-none p-5 border-b border-gray-100">
         <div className="flex items-start justify-between gap-3">

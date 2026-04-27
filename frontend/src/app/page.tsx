@@ -2,6 +2,7 @@
 import { useState, useCallback } from "react";
 import clsx from "clsx";
 import { useMutation } from "@tanstack/react-query";
+import { SlidersHorizontal, Map, List } from "lucide-react";
 import { fetchRecommendations } from "@/lib/api";
 import type { RecommendRequest, RecommendedSchool } from "@/lib/types";
 import { FilterPanel } from "@/components/FilterPanel";
@@ -23,12 +24,14 @@ const DEFAULT_REQUEST: RecommendRequest = {
 };
 
 type ViewMode = "map" | "circles";
+type MobileTab = "filters" | "map" | "results";
 
 export default function Home() {
   const [req, setReq] = useState<RecommendRequest>(DEFAULT_REQUEST);
   const [selected, setSelected] = useState<RecommendedSchool | null>(null);
   const [hovered, setHovered] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("map");
+  const [mobileTab, setMobileTab] = useState<MobileTab>("filters");
 
   const { data, mutate, isPending, isError, error } = useMutation({
     mutationFn: fetchRecommendations,
@@ -39,6 +42,7 @@ export default function Home() {
       setReq(newReq);
       setSelected(null);
       mutate(newReq);
+      setMobileTab("map");
     },
     [mutate]
   );
@@ -47,37 +51,45 @@ export default function Home() {
   const showRanking = schools.length > 0 || isPending;
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden">
+    <div className="flex flex-col h-[100dvh] overflow-hidden">
       {/* Header */}
-      <header className="flex-none bg-white border-b border-gray-100 px-6 py-2 flex items-center gap-4 z-10">
-        <Logo className="h-10 w-auto" />
+      <header className="flex-none bg-white border-b border-gray-100 px-4 py-2 flex items-center gap-4 z-10">
+        <Logo className="h-8 w-auto lg:h-10" />
         {data && (
           <span className="ml-auto text-xs text-gray-400">
-            {data.total} centros encontrados
+            {data.total} centros
           </span>
         )}
       </header>
 
-      {/* Body: filters | map | ranking */}
+      {/* Body */}
       <div className="flex flex-1 overflow-hidden">
 
         {/* LEFT — Filtros */}
-        <aside className="flex-none w-72 bg-white border-r border-gray-100 overflow-y-auto">
+        <aside className={clsx(
+          "bg-white border-r border-gray-100 overflow-y-auto",
+          // mobile: full width when active tab, hidden otherwise
+          mobileTab === "filters" ? "flex-1" : "hidden",
+          // desktop: always visible, fixed width
+          "lg:flex lg:flex-none lg:w-72"
+        )}>
           <FilterPanel initial={req} onSearch={handleSearch} loading={isPending} />
         </aside>
 
         {/* CENTER — Mapa / Circle Pack */}
-        <main className="flex-1 relative min-w-0 flex flex-col">
+        <main className={clsx(
+          "relative min-w-0 flex flex-col",
+          mobileTab === "map" ? "flex-1" : "hidden",
+          "lg:flex lg:flex-1"
+        )}>
           {/* View toggle */}
           {showRanking && (
-            <div className="flex-none flex gap-1 absolute top-3 left-1/2 -translate-x-1/2 z-10 bg-white/90 backdrop-blur-sm rounded-xl p-1 shadow-sm border border-gray-100">
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 flex gap-1 bg-white/90 backdrop-blur-sm rounded-xl p-1 shadow-sm border border-gray-100">
               <button
                 onClick={() => setViewMode("map")}
                 className={clsx(
                   "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all",
-                  viewMode === "map"
-                    ? "bg-brand-500 text-white shadow-sm"
-                    : "text-gray-500 hover:text-gray-700"
+                  viewMode === "map" ? "bg-brand-500 text-white shadow-sm" : "text-gray-500 hover:text-gray-700"
                 )}
               >
                 🗺️ Mapa
@@ -86,9 +98,7 @@ export default function Home() {
                 onClick={() => setViewMode("circles")}
                 className={clsx(
                   "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all",
-                  viewMode === "circles"
-                    ? "bg-brand-500 text-white shadow-sm"
-                    : "text-gray-500 hover:text-gray-700"
+                  viewMode === "circles" ? "bg-brand-500 text-white shadow-sm" : "text-gray-500 hover:text-gray-700"
                 )}
               >
                 🫧 Burbujas
@@ -97,10 +107,8 @@ export default function Home() {
           )}
 
           <div className="flex-1 relative">
-            {/* Loading overlay */}
             {isPending && <RecommendingLoader />}
 
-            {/* Map — always mounted to preserve state, hidden when not active */}
             <div className={clsx("absolute inset-0", viewMode !== "map" && "invisible")}>
               <MapView
                 schools={schools}
@@ -108,11 +116,10 @@ export default function Home() {
                 userLon={req.lon}
                 selected={selected}
                 hovered={hovered}
-                onSelectSchool={setSelected}
+                onSelectSchool={(s) => { setSelected(s); setMobileTab("results"); }}
               />
             </div>
 
-            {/* Circle pack */}
             {viewMode === "circles" && (
               <div className="absolute inset-0">
                 <CirclePackView
@@ -144,28 +151,66 @@ export default function Home() {
         </main>
 
         {/* RIGHT — Ranking */}
-        {showRanking && (
-          <aside className="flex-none w-80 bg-white border-l border-gray-100 flex flex-col overflow-hidden">
-            <div className="flex-none px-4 py-3 border-b border-gray-100">
-              <h2 className="text-sm font-semibold text-gray-800">
-                {isPending ? "Buscando…" : `${schools.length} colegios recomendados`}
-              </h2>
-              {!isPending && schools.length > 0 && (
-                <p className="text-xs text-gray-400 mt-0.5">Ordenados por ajuste a tu perfil</p>
-              )}
-            </div>
-            <div className="flex-1 overflow-y-auto">
-              <SchoolList
-                schools={schools}
-                loading={isPending}
-                selected={selected?.id ?? null}
-                onSelect={setSelected}
-                onHover={setHovered}
-              />
-            </div>
-          </aside>
-        )}
+        <aside className={clsx(
+          "bg-white border-l border-gray-100 flex flex-col overflow-hidden",
+          // mobile: full width on results tab
+          mobileTab === "results" ? "flex-1 flex" : "hidden",
+          // desktop: always visible when showRanking, fixed width
+          showRanking ? "lg:flex lg:flex-none lg:w-80" : "lg:hidden"
+        )}>
+          <div className="flex-none px-4 py-3 border-b border-gray-100">
+            <h2 className="text-sm font-semibold text-gray-800">
+              {isPending ? "Buscando…" : schools.length > 0 ? `${schools.length} colegios recomendados` : "Sin resultados"}
+            </h2>
+            {!isPending && schools.length > 0 && (
+              <p className="text-xs text-gray-400 mt-0.5">Ordenados por ajuste a tu perfil</p>
+            )}
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            <SchoolList
+              schools={schools}
+              loading={isPending}
+              selected={selected?.id ?? null}
+              onSelect={setSelected}
+              onHover={setHovered}
+            />
+          </div>
+        </aside>
       </div>
+
+      {/* Mobile bottom tab bar */}
+      <nav className="lg:hidden flex-none bg-white border-t border-gray-100 flex safe-area-pb">
+        <button
+          onClick={() => setMobileTab("filters")}
+          className={clsx(
+            "flex-1 flex flex-col items-center py-2 gap-0.5 text-[11px] font-medium transition-colors",
+            mobileTab === "filters" ? "text-brand-500" : "text-gray-400"
+          )}
+        >
+          <SlidersHorizontal className="w-5 h-5" />
+          Filtros
+        </button>
+        <button
+          onClick={() => setMobileTab("map")}
+          className={clsx(
+            "flex-1 flex flex-col items-center py-2 gap-0.5 text-[11px] font-medium transition-colors",
+            mobileTab === "map" ? "text-brand-500" : "text-gray-400"
+          )}
+        >
+          <Map className="w-5 h-5" />
+          Mapa
+        </button>
+        <button
+          onClick={() => setMobileTab("results")}
+          className={clsx(
+            "flex-1 flex flex-col items-center py-2 gap-0.5 text-[11px] font-medium transition-colors",
+            mobileTab === "results" ? "text-brand-500" : "text-gray-400"
+          )}
+        >
+          <List className="w-5 h-5" />
+          {showRanking && !isPending ? `${schools.length} centros` : "Resultados"}
+        </button>
+      </nav>
 
       {/* Detail overlay */}
       {selected && (
