@@ -5,6 +5,7 @@ import { Providers } from "./providers";
 export const metadata: Metadata = {
   title: "Colegios CV — Encuentra el mejor colegio para tu familia",
   description: "Recomendación personalizada de colegios en la Comunitat Valenciana",
+  robots: { index: false, follow: false },
   icons: {
     icon: [
       { url: "/favicon.ico" },
