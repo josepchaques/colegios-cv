@@ -30,7 +30,7 @@ export default function Home() {
   const [hovered, setHovered] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("map");
 
-  const { data, mutate, isPending } = useMutation({
+  const { data, mutate, isPending, isError, error } = useMutation({
     mutationFn: fetchRecommendations,
   });
 
@@ -123,7 +123,16 @@ export default function Home() {
               </div>
             )}
 
-            {!showRanking && (
+            {isError && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-4 shadow-sm text-center max-w-sm">
+                  <p className="text-sm font-medium text-red-700">Error al buscar</p>
+                  <p className="text-xs text-red-500 mt-1">{(error as Error)?.message}</p>
+                </div>
+              </div>
+            )}
+
+            {!showRanking && !isError && (
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                 <div className="bg-white/90 backdrop-blur-sm rounded-xl px-5 py-4 shadow-sm text-center">
                   <p className="text-sm font-medium text-gray-600">Configura tu búsqueda y pulsa</p>
