@@ -74,6 +74,37 @@ def infra_default(stype):
     return {"public": 0.62, "concertado": 0.72, "private": 0.85}[stype]
 
 
+def normalize_name(name: str) -> str:
+    name = re.sub(r"(?i)^C\.?\s*ESTRANGER\s*", "", name).strip()
+    name = re.sub(r"(?i)^CENTRE\s+ESTRANGER\s*", "", name).strip()
+    return name
+
+
+def detect_levels(name: str) -> list:
+    n = (name or "").upper()
+    levels = []
+    if re.search(r"\bIEI\b|INFANTIL", n):
+        levels.append("infantil")
+    if re.search(r"\bCEIP\b|PRIMARIA", n):
+        levels += ["infantil", "primaria"]
+    if re.search(r"\bIES\b|SECUNDARIA|ESO|INSTITUT\b", n):
+        levels += ["secundaria"]
+    if re.search(r"\bBACHILLERATO\b", n):
+        levels.append("bachillerato")
+    if re.search(r"\bCIPFP\b|\bFP\b|FORMACION PROFESIONAL", n):
+        levels.append("FP")
+    # Centros extranjeros e internacionales: ofrecen ciclo completo por defecto
+    if not levels and re.search(r"ESTRANGER|INTERNATIONAL|BRITISH|AMERICAN|FRENCH|GERMAN|NORDIC", n):
+        levels = ["infantil", "primaria", "secundaria", "bachillerato"]
+    # Fallback por tipo de centro
+    if not levels:
+        if re.search(r"\bINSTITUT\b|\bINSTITUTO\b", n):
+            levels = ["secundaria", "bachillerato"]
+        else:
+            levels = ["infantil", "primaria", "secundaria", "bachillerato"]
+    return list(dict.fromkeys(levels))
+
+
 def parse_row(row):
     try:
         lat = float((row.get("latitud")  or "0").replace(",", "."))
@@ -85,7 +116,7 @@ def parse_row(row):
     if not (38.0 <= lat <= 41.0 and -1.6 <= lon <= 0.8):
         return None
 
-    name = (row.get("denominacion") or "").strip()
+    name = normalize_name((row.get("denominacion") or "").strip())
     if not name:
         return None
 
@@ -211,7 +242,7 @@ def run():
                     lat          = gva["lat"],
                     lon          = gva["lon"],
                     school_type  = stype,
-                    levels       = [],
+                    levels       = detect_levels(gva["name"]),
                     methodology  = "tradicional",
                     monthly_fee_min       = gva["monthly_fee_min"],
                     monthly_fee_avg       = gva["monthly_fee_avg"],

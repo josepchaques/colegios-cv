@@ -95,7 +95,10 @@ def detect_levels(name: str, tags: dict) -> list:
         if "high" in stype:
             levels = ["secundaria", "bachillerato"]
         else:
-            levels = ["infantil", "primaria"]
+            # Name gives no level info — default to all so generic schools
+            # aren't invisible when filtering. Specific prefixes (CEIP, IES…)
+            # already handled above.
+            levels = ["infantil", "primaria", "secundaria", "bachillerato"]
     return list(dict.fromkeys(levels))  # deduplicate preserving order
 
 def zone_income_from_coords(lat: float, lon: float) -> float:

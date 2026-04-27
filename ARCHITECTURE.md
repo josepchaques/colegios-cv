@@ -9,8 +9,10 @@
 | Framework API | FastAPI | 0.111 | REST API, validación automática, OpenAPI |
 | Lenguaje | Python | 3.9+ | Lógica de negocio y scoring |
 | ORM | SQLAlchemy | 2.0 | Modelo de datos y queries |
-| Base de datos | SQLite (dev) / PostgreSQL + PostGIS (prod) | — | Almacenamiento de centros |
+| Base de datos | PostgreSQL | 16 | Almacenamiento de centros |
+| Driver | psycopg2-binary | 2.9 | Adaptador SQLAlchemy → PostgreSQL |
 | Caché | Redis | 7 | Caché de respuestas (producción) |
+| Scheduler | APScheduler | 3.10 | Ejecución automática de ETLs (background thread) |
 | Geocodificación distancias | geopy | 2.4 | Cálculo Haversine lat/lon → km |
 | Álgebra vectorial | NumPy | 1.26 | Cosine similarity para preferencias |
 | Servidor ASGI | Uvicorn | 0.29 | Servidor de producción |
@@ -42,8 +44,28 @@
 - **Cobertura:** Todos los nodos/ways/relations con `amenity=school` en el bounding box de la CV (37.8°N–41.0°N, 1.6°W–0.8°E)
 - **Datos obtenidos:** nombre, coordenadas (lat/lon), dirección parcial, tags de tipo y metodología
 - **Registros importados:** ~2.172 centros
-- **Actualización:** ETL manual (`data/etl_overpass.py`) — recomendado mensual
+- **Actualización:** automática vía APScheduler — día 1 de cada mes a las 03:00
+- **Ejecución manual:** `python data/etl_overpass.py`
 - **Licencia:** ODbL (Open Database Licence)
+
+### 3. WFS ICV/GVA — Etapas educativas oficiales
+
+- **URL:** `https://terramapas.icv.gva.es/12_Centros_wfs`
+- **Capas utilizadas:**
+
+| Capa WFS | Etapas asignadas |
+|---|---|
+| `CentrosDocentesNivel.EducacionInfantil` | `infantil` |
+| `CentrosDocentesNivel.EducacionPrimaria` | `infantil`, `primaria` |
+| `CentrosDocentesNivel.EducacionSecundariaBachillerato` | `secundaria`, `bachillerato` (refinado por `dgenerica_cas`) |
+| `CentrosDocentesNivel.FormacionProfesional` | `FP` |
+
+- **Cruce:** por `codcen` (código oficial de centro) → campo `code` en BD con prefijo `gva_`
+- **Cobertura:** ~2.781 centros con código GVA en la CV
+- **Registros actualizados en primera carga:** 751 centros
+- **Actualización:** automática vía APScheduler — día 1 de enero, abril, julio y octubre a las 05:00 (tras el ETL de la GVA)
+- **Ejecución manual:** `python data/etl_levels.py`
+- **Nota:** los centros de origen OSM puro (sin código GVA) mantienen inferencia de etapas por nombre
 
 ### 2. Dades Obertes GVA — CSV oficial
 - **URL:** `https://dadesobertes.gva.es` → dataset `edu-centros`
@@ -52,8 +74,21 @@
 - **Registros:** 3.685 centros en el CSV (3.632 válidos con coordenadas en CV)
 - **Acción ETL:** enriquece los registros OSM existentes por proximidad geográfica y añade centros no presentes en OSM
 - **Resultado combinado:** **4.026 centros reales**
-- **Actualización:** ETL manual (`data/etl_gva.py`) — recomendado trimestral
+- **Actualización:** automática vía APScheduler — día 1 de enero, abril, julio y octubre a las 04:00
+- **Ejecución manual:** `python data/etl_gva.py`
 - **Licencia:** Creative Commons BY 4.0
+
+### Scheduler de actualización automática
+
+El backend arranca APScheduler como background thread al iniciar la aplicación (`app/scheduler.py`). Los jobs corren en segundo plano sin bloquear la API y registran su actividad en los logs del servidor.
+
+| Job | Trigger | Script |
+|---|---|---|
+| `etl_osm` | Día 1 de cada mes, 03:00 | `data/etl_overpass.py` |
+| `etl_gva` | Día 1 de ene/abr/jul/oct, 04:00 | `data/etl_gva.py` |
+| `etl_levels` | Día 1 de ene/abr/jul/oct, 05:00 | `data/etl_levels.py` |
+
+Si un ETL falla (timeout, fuente no disponible), el error queda logueado y el scheduler continúa funcionando con normalidad.
 
 ### Campos enriquecidos por cruce OSM + GVA
 
@@ -75,7 +110,7 @@
 
 ### Principio fundamental
 
-> **El sistema prioriza el mejor ajuste al usuario. En caso de empate (diferencia < 0.03 puntos), desempata la calidad académica objetiva.**
+> **El sistema ordena por `final_score` directo sin agrupación. En caso de empate exacto, desempata el número de reseñas (más reseñas = score más fiable estadísticamente).**
 
 Los scores subjetivos (opiniones) tienen siempre menor peso que los objetivos (calidad académica, infraestructura).
 
@@ -210,14 +245,13 @@ El score se normaliza a [0, 1] dividiendo por 5.
 
 ### Regla de desempate
 
-Cuando dos centros tienen scores finales muy similares, el orden subjetivo es inestable. Para evitarlo:
+El ranking ordena directamente por `final_score` descendente, sin agrupación en cubos. En caso de empate exacto desempata el número de reseñas de Google:
 
 ```python
-if abs(score_a - score_b) < 0.03:
-    rank by objective_quality_score  # desempate objetivo
+results.sort(key=lambda r: (-r.scores["final"], -r.google_review_count))
 ```
 
-Esto garantiza que, ante opciones equivalentes para el usuario, gana el centro con mayor calidad académica demostrable.
+**Justificación:** el desempate por `google_review_count` es estadísticamente correcto porque un score calculado con más reseñas tiene menor varianza y es por tanto más fiable. El enfoque anterior agrupaba scores en cubos de 0.03 y desempataba por `objective_quality`, lo que introducía un sesgo implícito hacia la calidad académica independientemente de los pesos configurados por el usuario.
 
 ---
 
@@ -266,7 +300,7 @@ Cada resultado incluye dos bloques de lenguaje natural: puntos positivos (`expla
 | Filtro | Tipo | Lógica |
 |---|---|---|
 | `school_types` | `["public","concertado","private"]` | OR — muestra centros de cualquiera de los tipos seleccionados |
-| `school_levels` | `["infantil","primaria","secundaria","bachillerato","FP"]` | OR — muestra centros que impartan al menos una de las etapas seleccionadas |
+| `school_levels` | `["infantil","primaria","secundaria","bachillerato","FP"]` | AND — muestra solo centros que impartan **todas** las etapas seleccionadas |
 | `max_distance_km` | número | Hard filter — excluye centros fuera del radio |
 | `preferences` | vector 10D [0,1] | Soft filter — influye en el score, no excluye |
 | `weights` | objeto {user_fit, distance, cost, quality, reviews} | Ajusta la importancia de cada componente |

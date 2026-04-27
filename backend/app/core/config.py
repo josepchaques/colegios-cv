@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     app_name: str = "School Recommender CV"
     debug: bool = False
 
-    database_url: str = "sqlite:///./schools_cv.db"
+    database_url: str = "postgresql://postgres:postgres@localhost:5432/schools_cv"
     redis_url: str = "redis://redis:6379/0"
 
     # Scoring defaults

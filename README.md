@@ -23,9 +23,11 @@ Recomendador personalizado de colegios para la **Comunitat Valenciana**. Combina
 | Framework API | FastAPI | 0.111 |
 | Lenguaje | Python | 3.9+ |
 | ORM | SQLAlchemy | 2.0 |
-| Base de datos | SQLite (dev) / PostgreSQL (prod) | — |
+| Base de datos | PostgreSQL | 16 |
+| Driver PostgreSQL | psycopg2-binary | 2.9 |
 | Álgebra vectorial | NumPy | 1.26 |
 | Geocodificación | geopy | 2.4 |
+| Scheduler | APScheduler | 3.10 |
 | Servidor ASGI | Uvicorn | 0.29 |
 
 ### Frontend
@@ -59,7 +61,8 @@ colegios-cv/
 └── frontend/
     ├── src/
     │   ├── app/              # Layout, página principal, estilos globales
-    │   ├── components/       # FilterPanel, MapView, SchoolList, SchoolDetail…
+    │   ├── components/       # FilterPanel, MapView, SchoolList, SchoolDetail, SchoolCard,
+    │   │                     # RecommendingLoader (spinner de carga), LeadModal (captura de leads)
     │   └── lib/              # API client, tipos TypeScript
     ├── public/               # Logo, favicons
     └── next.config.js
@@ -70,57 +73,58 @@ colegios-cv/
 ## Instalación local
 
 ### Requisitos
-- Python 3.9+
-- Node.js 18+
+- Docker Desktop
 - Token de [Mapbox](https://account.mapbox.com) (gratuito)
 
-### Backend
+### Levantar con Docker (recomendado)
 
 ```bash
+cp .env.example .env
+# Edita .env y añade tu token de Mapbox
+docker compose up --build
+```
+
+Abre [http://localhost:3000](http://localhost:3000). La API estará en [http://localhost:8000](http://localhost:8000).
+
+Los ETLs se ejecutan automáticamente al arrancar la app (OSM mensual, GVA trimestral). Para lanzarlos manualmente dentro del contenedor:
+
+```bash
+docker compose exec backend python data/etl_overpass.py
+docker compose exec backend python data/etl_gva.py
+```
+
+### Sin Docker (requiere PostgreSQL local)
+
+```bash
+# Backend
 cd backend
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
-```
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/schools_cv uvicorn app.main:app --reload --port 8000
 
-La base de datos SQLite (`schools_cv.db`) ya incluye los 4.026 centros. Si quieres regenerarla desde cero:
-
-```bash
-# 1. Importar colegios de OpenStreetMap (~2.172 centros)
-python3 data/etl_overpass.py
-
-# 2. Enriquecer con CSV oficial GVA (+1.854 centros nuevos)
-python3 data/etl_gva.py
-```
-
-### Frontend
-
-```bash
+# Frontend (otra terminal)
 cd frontend
 cp .env.example .env.local
-# Edita .env.local y añade tu token de Mapbox
 npm install
 npm run dev
 ```
-
-Abre [http://localhost:3000](http://localhost:3000).
 
 ---
 
 ## Variables de entorno
 
-### Frontend (`.env.local`)
+### Raíz del proyecto (`.env`)
 ```env
 NEXT_PUBLIC_MAPBOX_TOKEN=pk.your_token_here
-NEXT_PUBLIC_API_URL=http://localhost:8000
+DATABASE_URL=postgresql://postgres:postgres@db:5432/schools_cv
+REDIS_URL=redis://redis:6379/0
 ```
 
-### Backend (`.env`, opcional)
+### Backend (variables adicionales opcionales)
 ```env
-DEBUG=true                          # false en producción (desactiva /docs)
+DEBUG=true                             # false en producción (desactiva /docs)
 ALLOWED_ORIGINS=http://localhost:3000  # En prod: https://tudominio.com
-DATABASE_URL=sqlite:///./schools_cv.db
 ```
 
 ---
@@ -203,7 +207,7 @@ final_score = Σ (wᵢ · scoreᵢ)   donde Σwᵢ = 1
 | `objective_quality` | 15% | Proxy académico + infraestructura |
 | `review` | 5% | Bayesian smoothing (C=10, m=3.8) |
 
-En caso de empate (diferencia < 0.03), desempata `objective_quality`.
+El ranking ordena por `final_score` directo. En caso de empate exacto desempata `google_review_count` (más reseñas = score más fiable estadísticamente).
 
 Documentación completa del algoritmo en [ARCHITECTURE.md](./ARCHITECTURE.md).
 
@@ -211,11 +215,12 @@ Documentación completa del algoritmo en [ARCHITECTURE.md](./ARCHITECTURE.md).
 
 ## Fuentes de datos
 
-| Fuente | Registros | Licencia |
-|---|---|---|
-| [OpenStreetMap — Overpass API](https://overpass-api.de) | ~2.172 centros | ODbL |
-| [Dades Obertes GVA](https://dadesobertes.gva.es) — dataset `edu-centros` | 3.632 centros válidos | CC BY 4.0 |
-| **Total combinado** | **4.026 centros** | — |
+| Fuente | Registros | Uso | Licencia |
+|---|---|---|---|
+| [OpenStreetMap — Overpass API](https://overpass-api.de) | ~2.172 centros | Coordenadas, nombre, tipo | ODbL |
+| [Dades Obertes GVA](https://dadesobertes.gva.es) — `edu-centros` | 3.632 centros válidos | Datos oficiales, enriquecimiento | CC BY 4.0 |
+| [WFS ICV/GVA](https://terramapas.icv.gva.es/12_Centros_wfs) | ~2.781 centros | **Etapas educativas reales** | CC BY 4.0 |
+| **Total combinado** | **4.026 centros** | — | — |
 
 ---
 

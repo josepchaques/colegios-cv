@@ -23,10 +23,10 @@ def get_recommendations(
 
     schools = query.all()
 
-    # Level filter (done in Python — JSON array in SQLite)
+    # Level filter: school must cover ALL requested levels (AND logic)
     if req.school_levels:
         requested = set(req.school_levels)
-        schools = [s for s in schools if requested & set(s.levels or [])]
+        schools = [s for s in schools if requested.issubset(set(s.levels or []))]
 
     results = []
     for school in schools:
@@ -78,12 +78,11 @@ def get_recommendations(
             )
         )
 
-    # Sort: primary by final_score DESC, tie-break by objective_quality DESC
-    threshold = 0.03
+    # Sort: by final score DESC, tie-break by review count (more reviews = more reliable score)
     results.sort(
         key=lambda r: (
-            -round(r.scores["final"] / threshold) * threshold,
-            -r.scores["objective_quality"],
+            -r.scores["final"],
+            -r.google_review_count,
         )
     )
 

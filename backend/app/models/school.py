@@ -8,7 +8,7 @@ class School(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(200), nullable=False)
-    code = Column(String(20), unique=True, index=True)
+    code = Column(String(50), unique=True, index=True)
 
     # Location
     address = Column(String(300))

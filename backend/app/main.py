@@ -1,19 +1,35 @@
 import os
+import logging
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from .core.database import Base, engine
 from .api.routes import recommend, schools
+from .scheduler import create_scheduler
 
 Base.metadata.create_all(bind=engine)
 
 DEBUG = os.getenv("DEBUG", "true").lower() == "true"
+log = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    scheduler = create_scheduler()
+    scheduler.start()
+    log.info("Scheduler started (OSM: monthly, GVA: quarterly)")
+    yield
+    scheduler.shutdown(wait=False)
+    log.info("Scheduler stopped")
+
 
 # Docs only available in debug/dev mode
 app = FastAPI(
     title="School Recommender CV",
     description="Recomendación de colegios en la Comunitat Valenciana",
     version="1.0.0",
+    lifespan=lifespan,
     docs_url="/docs" if DEBUG else None,
     redoc_url="/redoc" if DEBUG else None,
     openapi_url="/openapi.json" if DEBUG else None,

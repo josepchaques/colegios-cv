@@ -68,10 +68,6 @@ export function ScoreBreakdown({ scores }: Props) {
         ))}
       </div>
 
-      <p className="text-[10px] text-gray-400 mt-3">
-        * La calidad académica objetiva siempre tiene mayor peso que las opiniones.
-        En caso de empate, desempata la calidad objetiva.
-      </p>
     </div>
   );
 }

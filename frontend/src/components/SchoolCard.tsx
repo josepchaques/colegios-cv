@@ -1,7 +1,9 @@
 "use client";
+import { useState } from "react";
 import type { RecommendedSchool } from "@/lib/types";
 import clsx from "clsx";
-import { Star, MapPin } from "lucide-react";
+import { Star, MapPin, FileText } from "lucide-react";
+import { LeadModal } from "./LeadModal";
 
 const TYPE_COLORS: Record<string, string> = {
   public: "bg-emerald-50 text-emerald-700",
@@ -62,65 +64,94 @@ export function SchoolCard({
   onMouseEnter,
   onMouseLeave,
 }: Props) {
+  const [modalOpen, setModalOpen] = useState(false);
+
   const costStr =
     school.monthly_fee_avg <= 30
       ? "Gratuito"
       : `~${Math.round(school.monthly_fee_avg)}€/mes`;
 
   return (
-    <button
-      className={clsx(
-        "w-full text-left p-3 rounded-xl border transition-all bg-white",
-        isSelected
-          ? "border-brand-500 bg-brand-50 shadow-sm"
-          : "border-gray-100 hover:border-brand-200 hover:shadow-sm"
-      )}
-      onClick={onSelect}
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
-    >
-      <div className="flex items-start gap-2.5">
-        {/* Rank */}
-        <span className="flex-none text-xs font-bold text-gray-300 w-4 mt-0.5">
-          {rank}
-        </span>
-
-        {/* Score ring */}
-        <ScoreRing score={school.scores.final} />
-
-        {/* Content */}
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-gray-900 truncate leading-tight">
-            {school.name}
-          </p>
-          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-            <span
-              className={clsx(
-                "text-[10px] font-medium px-1.5 py-0.5 rounded",
-                TYPE_COLORS[school.school_type] ?? "bg-gray-100 text-gray-600"
-              )}
-            >
-              {TYPE_LABELS[school.school_type] ?? school.school_type}
+    <>
+      <div
+        role="button"
+        tabIndex={0}
+        className={clsx(
+          "w-full text-left p-3 rounded-xl border transition-all bg-white cursor-pointer",
+          isSelected
+            ? "border-brand-500 bg-brand-50 shadow-sm"
+            : "border-gray-100 hover:border-brand-200 hover:shadow-sm"
+        )}
+        onClick={onSelect}
+        onKeyDown={(e) => e.key === "Enter" && onSelect()}
+        onMouseEnter={onMouseEnter}
+        onMouseLeave={onMouseLeave}
+      >
+        <div className="flex items-start gap-2.5">
+          {/* Rank */}
+          {rank <= 3 ? (
+            <span className="flex-none w-4 mt-0.5 text-center text-sm leading-none">
+              {rank === 1 ? "🥇" : rank === 2 ? "🥈" : "🥉"}
             </span>
-            {school.district && (
-              <span className="text-[10px] text-gray-400 flex items-center gap-0.5">
-                <MapPin className="w-2.5 h-2.5" />
-                {school.district}
+          ) : (
+            <span className="flex-none text-xs font-bold text-gray-300 w-4 mt-0.5">
+              {rank}
+            </span>
+          )}
+
+          {/* Score ring */}
+          <ScoreRing score={school.scores.final} />
+
+          {/* Content */}
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-gray-900 truncate leading-tight">
+              {school.name}
+            </p>
+            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+              <span
+                className={clsx(
+                  "text-[10px] font-medium px-1.5 py-0.5 rounded",
+                  TYPE_COLORS[school.school_type] ?? "bg-gray-100 text-gray-600"
+                )}
+              >
+                {TYPE_LABELS[school.school_type] ?? school.school_type}
               </span>
-            )}
-          </div>
-          <div className="flex items-center gap-2 mt-1">
-            {school.google_rating > 0 && (
-              <span className="flex items-center gap-0.5 text-[10px] text-amber-500">
-                <Star className="w-2.5 h-2.5 fill-amber-400 stroke-amber-400" />
-                {school.google_rating.toFixed(1)}
-                <span className="text-gray-400">({school.google_review_count})</span>
-              </span>
-            )}
-            <span className="text-[10px] text-gray-400">{costStr}</span>
+              {school.district && (
+                <span className="text-[10px] text-gray-400 flex items-center gap-0.5">
+                  <MapPin className="w-2.5 h-2.5" />
+                  {school.district}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2 mt-1">
+              {school.google_rating > 0 && (
+                <span className="flex items-center gap-0.5 text-[10px] text-amber-500">
+                  <Star className="w-2.5 h-2.5 fill-amber-400 stroke-amber-400" />
+                  {school.google_rating.toFixed(1)}
+                  <span className="text-gray-400">({school.google_review_count})</span>
+                </span>
+              )}
+              <span className="text-[10px] text-gray-400">{costStr}</span>
+            </div>
+
+            {/* CTA */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setModalOpen(true);
+              }}
+              className="mt-2 flex items-center gap-1 text-[11px] font-semibold text-brand-500 hover:text-brand-600 transition-colors"
+            >
+              <FileText className="w-3 h-3" />
+              Informe gratuito PDF →
+            </button>
           </div>
         </div>
       </div>
-    </button>
+
+      {modalOpen && (
+        <LeadModal school={school} onClose={() => setModalOpen(false)} />
+      )}
+    </>
   );
 }
