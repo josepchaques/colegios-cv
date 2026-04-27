@@ -9,6 +9,7 @@ export async function fetchRecommendations(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),
+    signal: AbortSignal.timeout(60_000),
   });
   if (!res.ok) {
     const err = await res.text();
